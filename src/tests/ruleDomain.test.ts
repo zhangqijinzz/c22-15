@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateSample } from '../domain/conditionEvaluator';
 import { validateField, validateProject } from '../domain/fieldValidation';
-import { analyzeRules } from '../domain/ruleAnalysis';
+import { analyzeRules, summarizeAnalysis } from '../domain/ruleAnalysis';
 import type { BusinessRule, RuleField, RuleProject } from '../models/ruleModel';
 
 const amount: RuleField = { id: 'amount', name: '金额', type: 'number', min: 0, max: 1000 };
@@ -64,5 +64,28 @@ describe('rule consistency analysis', () => {
     expect(result.winner?.id).toBe('either');
     const missing = evaluateSample(project([rule]), { amount: 10, tier: 'gold' });
     expect(missing.errors).toEqual(['请填写“启用”']);
+  });
+});
+
+describe('analysis summary for pinned version conclusions', () => {
+  it('flags conflicts as the worst tone, then reachability and coverage gaps', () => {
+    const withConflict = analyzeRules(project([
+      makeRule('a', amountAtLeast(500), 20, 'one'),
+      makeRule('b', amountAtLeast(600), 20, 'two'),
+    ]));
+    expect(summarizeAnalysis(withConflict, 2).tone).toBe('red');
+    expect(summarizeAnalysis(withConflict, 2).conflictCount).toBeGreaterThan(0);
+
+    const withUnreachable = analyzeRules(project([
+      makeRule('reachable', amountAtLeast(100), 10, 'ok'),
+      makeRule('impossible', amountAtLeast(1001), 10, 'never'),
+    ]));
+    expect(summarizeAnalysis(withUnreachable, 2).tone).toBe('amber');
+
+    const clean = analyzeRules(project([
+      makeRule('covers-all', { kind: 'group', operator: 'and', conditions: [{ kind: 'predicate', fieldId: 'amount', operator: 'gte', value: 0 }] }, 10, 'ok'),
+    ]));
+    expect(summarizeAnalysis(clean, 1).tone).toBe('green');
+    expect(summarizeAnalysis(clean, 1).coveragePercent).toBe(100);
   });
 });

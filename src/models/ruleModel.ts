@@ -40,6 +40,15 @@ export interface BusinessRule {
 
 export type SampleInput = Record<string, ScalarValue | ''>;
 
+/**
+ * 保存/冻结版本那一刻固定下来的检查结论。
+ * 与编辑态实时重算的 RuleAnalysis 分开存放，回看历史版本时结论不再随当前编辑变化。
+ */
+export interface VersionCheck {
+  checkedAt: number;
+  analysis: RuleAnalysis;
+}
+
 export interface RuleVersion {
   id: string;
   name: string;
@@ -48,6 +57,8 @@ export interface RuleVersion {
   fields: RuleField[];
   rules: BusinessRule[];
   sampleInputs: SampleInput;
+  /** 版本自带的检查结论；保存时若从未成功检查过则为空。 */
+  check?: VersionCheck;
 }
 
 export interface RuleProject {

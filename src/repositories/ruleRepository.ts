@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleField, RuleProject, RuleVersion, WorkspaceDocument } from '../models/ruleModel';
+import type { BusinessRule, RuleAnalysis, RuleField, RuleProject, RuleVersion, VersionCheck, WorkspaceDocument } from '../models/ruleModel';
 import { defaultSample } from '../domain/conditionEvaluator';
 import { ProjectStorageService } from '../services/projectStorageService';
 
@@ -62,16 +62,50 @@ function isBusinessRule(value: unknown): value is BusinessRule {
 }
 
 function isRuleVersion(value: unknown): value is RuleVersion {
+  if (!isRecord(value)
+    || typeof value.id !== 'string'
+    || typeof value.name !== 'string'
+    || typeof value.savedAt !== 'number'
+    || typeof value.frozen !== 'boolean'
+    || !Array.isArray(value.fields)
+    || !value.fields.every(isRuleField)
+    || !Array.isArray(value.rules)
+    || !value.rules.every(isBusinessRule)
+    || !isRecord(value.sampleInputs)) return false;
+  // 历史快照没有 check 字段：按“未检查”载入，不破坏旧数据。
+  if (value.check !== undefined && !isVersionCheck(value.check)) return false;
+  return true;
+}
+
+function isVersionCheck(value: unknown): value is VersionCheck {
   return isRecord(value)
-    && typeof value.id === 'string'
-    && typeof value.name === 'string'
-    && typeof value.savedAt === 'number'
-    && typeof value.frozen === 'boolean'
-    && Array.isArray(value.fields)
-    && value.fields.every(isRuleField)
-    && Array.isArray(value.rules)
-    && value.rules.every(isBusinessRule)
-    && isRecord(value.sampleInputs);
+    && typeof value.checkedAt === 'number'
+    && isRuleAnalysis(value.analysis);
+}
+
+function isRuleAnalysis(value: unknown): value is RuleAnalysis {
+  if (!isRecord(value)
+    || typeof value.checkedCases !== 'number'
+    || typeof value.coveredCases !== 'number'
+    || typeof value.coveragePercent !== 'number'
+    || !Array.isArray(value.overlaps)
+    || !value.overlaps.every(isRuleOverlap)
+    || !Array.isArray(value.unreachableRuleIds)
+    || !value.unreachableRuleIds.every((id) => typeof id === 'string')
+    || !Array.isArray(value.shadowedRuleIds)
+    || !value.shadowedRuleIds.every((id) => typeof id === 'string')
+    || !Array.isArray(value.uncoveredExamples)
+    || !value.uncoveredExamples.every(isRecord)
+    || typeof value.truncated !== 'boolean') return false;
+  return true;
+}
+
+function isRuleOverlap(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.ruleAId === 'string'
+    && typeof value.ruleBId === 'string'
+    && typeof value.conflict === 'boolean'
+    && isRecord(value.witness);
 }
 
 function isConditionGroup(value: unknown): value is BusinessRule['conditions'] {

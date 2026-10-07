@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleProject, RuleVersion, WorkspaceDocument } from './ruleModel';
+import type { BusinessRule, RuleAnalysis, RuleProject, RuleVersion, VersionCheck, WorkspaceDocument } from './ruleModel';
 
 export function createDemoWorkspace(): WorkspaceDocument {
   const fields: RuleProject['fields'] = [
@@ -36,11 +36,25 @@ export function createBlankProject(ordinal: number): RuleProject {
   return { id: makeId('project'), title: `未命名规则项目 ${ordinal}`, fields: [], rules: [], sampleInputs: {}, versions: [], updatedAt: Date.now() };
 }
 
-export function createVersionSnapshot(project: RuleProject, name: string, frozen: boolean): RuleVersion {
-  return {
+/**
+ * 保存版本快照。check 为当时编辑态最近一次成功检查的结论（含检查时刻），
+ * 一并深拷贝固定下来；从未成功检查过时不传，版本即标记为“未检查”。
+ */
+export function createVersionSnapshot(
+  project: RuleProject,
+  name: string,
+  frozen: boolean,
+  check?: { analysis: RuleAnalysis; checkedAt: number },
+): RuleVersion {
+  const version: RuleVersion = {
     id: makeId('version'), name, savedAt: Date.now(), frozen,
     fields: cloneData(project.fields), rules: cloneData(project.rules), sampleInputs: cloneData(project.sampleInputs),
   };
+  if (check) {
+    const pinned: VersionCheck = { checkedAt: check.checkedAt, analysis: cloneData(check.analysis) };
+    version.check = pinned;
+  }
+  return version;
 }
 
 export function cloneData<T>(value: T): T {

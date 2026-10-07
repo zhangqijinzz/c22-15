@@ -120,6 +120,48 @@ function collectBreaks(
 
 export const ruleAnalysisService = { analyze: analyzeRules };
 
+export type AnalysisTone = 'green' | 'amber' | 'red';
+
+export interface AnalysisSummary {
+  coveragePercent: number;
+  coveredCases: number;
+  checkedCases: number;
+  ruleCount: number;
+  conflictCount: number;
+  overlapCount: number;
+  unreachableCount: number;
+  shadowedCount: number;
+  uncoveredCount: number;
+  truncated: boolean;
+  tone: AnalysisTone;
+}
+
+/**
+ * 将一次检查结论压成版本列表/详情可复用的概要。
+ * 冲突为最严重结论，其次是不可达、未覆盖或采样被截断。
+ */
+export function summarizeAnalysis(analysis: RuleAnalysis, ruleCount: number): AnalysisSummary {
+  const conflictCount = analysis.overlaps.filter((overlap) => overlap.conflict).length;
+  const tone: AnalysisTone = conflictCount > 0
+    ? 'red'
+    : analysis.unreachableRuleIds.length > 0 || analysis.uncoveredExamples.length > 0 || analysis.truncated
+      ? 'amber'
+      : 'green';
+  return {
+    coveragePercent: analysis.coveragePercent,
+    coveredCases: analysis.coveredCases,
+    checkedCases: analysis.checkedCases,
+    ruleCount,
+    conflictCount,
+    overlapCount: analysis.overlaps.length,
+    unreachableCount: analysis.unreachableRuleIds.length,
+    shadowedCount: analysis.shadowedRuleIds.length,
+    uncoveredCount: analysis.uncoveredExamples.length,
+    truncated: analysis.truncated,
+    tone,
+  };
+}
+
 export function firstOverlapWitness(analysis: RuleAnalysis): MatchWitness | undefined {
   const overlap = analysis.overlaps[0];
   return overlap ? { values: overlap.witness, ruleIds: [overlap.ruleAId, overlap.ruleBId] } : undefined;

@@ -24,6 +24,8 @@ export interface WorkspaceState {
   activeModule: ModuleId;
   checkStatus: CheckStatus;
   analysis: RuleAnalysis | null;
+  /** 编辑态实时结论的检查时刻；analysis 一旦因编辑失效会一起清空。 */
+  analysisAt?: number;
   validationIssues: ReturnType<typeof ruleDomain.validateProject>;
   sampleEvaluation: SampleEvaluation | null;
   selectedRuleId?: string;
@@ -130,7 +132,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
       const analysis = await operation.promise;
       if (revision !== this.checkRevision) return;
       this.checkOperation = undefined;
-      this.publish({ ...this.state, phase: 'ready', checkStatus: 'success', analysis, notice: `检查完成：已分析 ${analysis.checkedCases.toLocaleString('zh-CN')} 个逻辑分区` });
+      this.publish({ ...this.state, phase: 'ready', checkStatus: 'success', analysis, analysisAt: Date.now(), notice: `检查完成：已分析 ${analysis.checkedCases.toLocaleString('zh-CN')} 个逻辑分区` });
     } catch (error) {
       if (revision !== this.checkRevision) return;
       this.checkOperation = undefined;
@@ -178,14 +180,14 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
   saveVersion(): void {
     const project = this.state.project;
     if (!project) return;
-    const version = createVersionSnapshot(project, `版本 ${project.versions.length + 1}`, false);
+    const version = createVersionSnapshot(project, `版本 ${project.versions.length + 1}`, false, this.currentVersionCheck());
     this.replaceProject({ ...project, versions: [version, ...project.versions] }, `已保存${version.name}`, false);
   }
 
   freezeCurrent(): void {
     const project = this.state.project;
     if (!project || project.frozenVersionId) return;
-    const version = createVersionSnapshot(project, `冻结版本 ${project.versions.length + 1}`, true);
+    const version = createVersionSnapshot(project, `冻结版本 ${project.versions.length + 1}`, true, this.currentVersionCheck());
     this.replaceProject({ ...project, versions: [version, ...project.versions], frozenVersionId: version.id }, `已冻结${version.name}`, false, true);
   }
 
@@ -232,6 +234,11 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
     }
   }
 
+  private currentVersionCheck(): { analysis: RuleAnalysis; checkedAt: number } | undefined {
+    const { analysis, analysisAt } = this.state;
+    return analysis ? { analysis, checkedAt: analysisAt ?? Date.now() } : undefined;
+  }
+
   private replaceProject(project: RuleProject, notice: string, recheck: boolean, allowFrozen = false): void {
     const workspace = this.state.workspace;
     if (!workspace) return;
@@ -247,6 +254,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
       phase: issues.length ? 'validating' : 'editing', validationIssues: issues,
       checkStatus: issues.length ? 'idle' : recheck ? 'scheduled' : this.state.checkStatus,
       analysis: recheck ? null : this.state.analysis,
+      analysisAt: recheck ? undefined : this.state.analysisAt,
       sampleEvaluation: evaluateSample(updated, updated.sampleInputs),
       selectedRuleId: updated.rules.some((rule) => rule.id === this.state.selectedRuleId) ? this.state.selectedRuleId : updated.rules[0]?.id,
       notice,
