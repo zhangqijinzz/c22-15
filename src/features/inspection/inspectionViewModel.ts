@@ -15,8 +15,8 @@ export class InspectionViewModel {
     this.workspace.saveVersion();
   }
 
-  freeze(): void {
-    this.workspace.freezeCurrent();
+  freeze(): Promise<void> {
+    return this.workspace.freezeCurrent();
   }
 
   continueFrom(versionId: string): void {

@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleAnalysis, RuleProject, RuleVersion, SampleInput } from '../../models/ruleModel';
+import type { BusinessRule, CheckVerdict, RuleAnalysis, RuleProject, RuleVersion, SampleInput, VersionCheckConclusion } from '../../models/ruleModel';
 import type { WorkspaceState } from '../../viewmodels/workspaceViewModel';
 import type { InspectionViewModel } from './inspectionViewModel';
 
@@ -19,24 +19,26 @@ export function InspectionView({ state, viewModel, onOpenRule }: InspectionViewP
 
       {state.validationIssues.length > 0 && <div className="validation-banner"><strong>规则暂时无法检查</strong><span>{state.validationIssues[0].message}</span><button className="text-button" onClick={() => state.validationIssues[0].ruleId ? onOpenRule(state.validationIssues[0].ruleId) : undefined}>{state.validationIssues[0].ruleId ? '打开相关规则 →' : '修复项目定义'}</button></div>}
       {state.checkStatus === 'error' && !state.validationIssues.length && <div className="error-banner">检查失败：{state.notice}</div>}
+      <div className="analysis-scope-bar"><span className="analysis-scope-tag">当前编辑态</span><span>以下结论随编辑自动重算，不会写回历史版本；保存或冻结版本时，当时的结论会单独固定在下方版本记录中。</span></div>
       {!analysis && !state.validationIssues.length && <div className="loading-analysis card-surface"><div className={isChecking ? 'spinner' : 'analysis-orb'}>{isChecking ? '' : '✳'}</div><div><strong>{isChecking ? '正在分析条件空间' : '准备检查规则集合'}</strong><p>{isChecking ? '计算在独立工作线程中运行，可随时取消。' : '点击“运行一致性检查”查看覆盖与规则关系。'}</p></div>{state.checkStatus === 'success' && <span className="success-mark">✓</span>}</div>}
-      {analysis && <AnalysisPanel analysis={analysis} project={project as RuleProject} byId={byId} onOpenRule={onOpenRule} />}
+      {analysis && <AnalysisPanel analysis={analysis} project={project as RuleProject} byId={byId} onOpenRule={onOpenRule} frozen={Boolean(project?.frozenVersionId)} />}
 
       <section className="versions-section">
-        <div className="versions-heading"><div><span className="eyebrow">CHANGE HISTORY</span><h2>规则版本</h2><p>保存检查前后的结构快照。冻结后，当前规则只能通过复制版本继续修改。</p></div><div className="button-row"><button className="button button-subtle" disabled={!rules.length} onClick={() => viewModel.saveVersion()}>＋ 保存版本</button><button className="button button-outline" disabled={!rules.length || Boolean(project?.frozenVersionId)} onClick={() => viewModel.freeze()}>◈ 冻结当前</button></div></div>
-        {project?.versions.length ? <div className="version-list">{project.versions.map((version, index) => <VersionRow key={version.id} version={version} index={index} current={project.frozenVersionId === version.id} onContinue={() => viewModel.continueFrom(version.id)} onCopy={() => viewModel.copyToProject(version.id)} />)}</div> : <div className="version-empty card-surface"><span>◷</span><p>还没有保存版本。规则结构和检查结果确认后，可以创建第一个快照。</p></div>}
+        <div className="versions-heading"><div><span className="eyebrow">CHANGE HISTORY</span><h2>规则版本</h2><p>每条版本自带保存当时的检查结论（覆盖率、冲突、不可达），冻结后一并固定；上方实时结论不会改动历史记录。</p></div><div className="button-row"><button className="button button-subtle" disabled={!rules.length} onClick={() => viewModel.saveVersion()}>＋ 保存版本</button><button className="button button-outline" disabled={!rules.length || Boolean(project?.frozenVersionId) || isChecking} onClick={() => void viewModel.freeze()}>◈ 冻结当前</button></div></div>
+        {project?.versions.length ? <div className="version-list">{project.versions.map((version, index) => <VersionRow key={version.id} version={version} index={index} current={project.frozenVersionId === version.id} onContinue={() => viewModel.continueFrom(version.id)} onCopy={() => viewModel.copyToProject(version.id)} />)}</div> : <div className="version-empty card-surface"><span>◷</span><p>还没有保存版本。规则结构和检查结果确认后，可以创建第一个带结论快照。</p></div>}
       </section>
     </section>
   );
 }
 
-interface AnalysisPanelProps { analysis: RuleAnalysis; project: RuleProject; byId: Map<string, BusinessRule>; onOpenRule: (ruleId: string) => void }
+interface AnalysisPanelProps { analysis: RuleAnalysis; project: RuleProject; byId: Map<string, BusinessRule>; onOpenRule: (ruleId: string) => void; frozen: boolean }
 
-function AnalysisPanel({ analysis, project, byId, onOpenRule }: AnalysisPanelProps) {
+function AnalysisPanel({ analysis, project, byId, onOpenRule, frozen }: AnalysisPanelProps) {
   const conflictCount = analysis.overlaps.filter((overlap) => overlap.conflict).length;
   const overlapCount = analysis.overlaps.length;
   const coveredRules = Math.max(0, project.rules.length - analysis.unreachableRuleIds.length);
   return <>
+    {frozen && <div className="frozen-live-banner">◈ 当前为已冻结版本：实时结论停留在冻结那一刻，需“从此版本继续”或“复制为项目”后才会重新计算。</div>}
     <div className="analysis-summary">
       <MetricCard label="输入空间覆盖" value={`${analysis.coveragePercent}%`} detail={`${analysis.coveredCases} / ${analysis.checkedCases} 个代表分区`} icon="◌" tone={analysis.uncoveredExamples.length ? 'amber' : 'green'} />
       <MetricCard label="规则关系" value={`${overlapCount}`} detail={`${conflictCount} 个同优先级结果冲突`} icon="⇄" tone={conflictCount ? 'red' : 'blue'} />
@@ -73,8 +75,31 @@ function formatWitness(values: SampleInput, project: RuleProject): string {
   }).join(' · ');
 }
 
+const verdictMeta: Record<CheckVerdict, { label: string; className: string }> = {
+  clean: { label: '✓ 检查通过', className: 'conclusion-clean' },
+  warning: { label: '! 存在告警', className: 'conclusion-warning' },
+  conflict: { label: '✕ 存在冲突', className: 'conclusion-conflict' },
+};
+
+function VersionConclusion({ conclusion }: { conclusion: VersionCheckConclusion | null | undefined }) {
+  if (conclusion === undefined || conclusion === null) {
+    return <div className="version-conclusion version-conclusion-none"><span className="conclusion-tag conclusion-untagged">未检查</span><span className="conclusion-text">保存时未运行检查，无随版本固定的结论</span></div>;
+  }
+  const meta = verdictMeta[conclusion.verdict];
+  const parts = [
+    `覆盖 ${conclusion.coveragePercent}%`,
+    conclusion.conflictCount ? `${conclusion.conflictCount} 冲突` : '',
+    conclusion.overlapCount - conclusion.conflictCount > 0 ? `${conclusion.overlapCount - conclusion.conflictCount} 重叠` : '',
+    conclusion.unreachableCount ? `${conclusion.unreachableCount} 不可达` : '',
+    conclusion.shadowedCount ? `${conclusion.shadowedCount} 遮蔽` : '',
+    conclusion.uncoveredCount ? `${conclusion.uncoveredCount} 未覆盖` : '',
+    conclusion.truncated ? '结果截断' : '',
+  ].filter(Boolean).join(' · ');
+  return <div className={`version-conclusion ${meta.className}`}><span className="conclusion-tag">{meta.label}</span><span className="conclusion-text">{parts} · 结论时间 {formatDate(conclusion.checkedAt)}</span></div>;
+}
+
 function VersionRow({ version, index, current, onContinue, onCopy }: { version: RuleVersion; index: number; current: boolean; onContinue: () => void; onCopy: () => void }) {
-  return <article className={`version-row${current ? ' version-current' : ''}`}><span className="version-number">{String(index + 1).padStart(2, '0')}</span><div className="version-copy"><strong>{version.name}{current && <em>当前冻结</em>}</strong><span>{formatDate(version.savedAt)} · {version.fields.length} 字段 · {version.rules.length} 条规则</span></div><div className="version-actions">{!version.frozen && <button className="text-button" onClick={onContinue}>从此版本继续</button>}<button className="text-button" onClick={onCopy}>复制为项目</button><span className={version.frozen ? 'version-state frozen' : 'version-state'}>{version.frozen ? '◈ 已冻结' : '◷ 快照'}</span></div></article>;
+  return <article className={`version-row${current ? ' version-current' : ''}`}><span className="version-number">{String(index + 1).padStart(2, '0')}</span><div className="version-copy"><strong>{version.name}{current && <em>当前冻结</em>}</strong><span>{formatDate(version.savedAt)} 保存 · {version.fields.length} 字段 · {version.rules.length} 条规则</span><VersionConclusion conclusion={version.checkConclusion} /></div><div className="version-actions">{!version.frozen && <button className="text-button" onClick={onContinue}>从此版本继续</button>}<button className="text-button" onClick={onCopy}>复制为项目</button><span className={version.frozen ? 'version-state frozen' : 'version-state'}>{version.frozen ? '◈ 已冻结' : '◷ 快照'}</span></div></article>;
 }
 
 function formatDate(time: number): string {

@@ -1,4 +1,5 @@
 import { evaluateSample } from '../domain/conditionEvaluator';
+import { deriveCheckConclusion } from '../domain/ruleAnalysis';
 import { ruleDomain } from '../domain/ruleDomain';
 import type {
   ModuleId,
@@ -178,15 +179,61 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
   saveVersion(): void {
     const project = this.state.project;
     if (!project) return;
-    const version = createVersionSnapshot(project, `版本 ${project.versions.length + 1}`, false);
-    this.replaceProject({ ...project, versions: [version, ...project.versions] }, `已保存${version.name}`, false);
+    // 钉住保存这一刻的检查结论；从未跑过检查则显式记为“未检查”，与编辑态实时结论分开存放。
+    const conclusion = this.state.analysis ? deriveCheckConclusion(this.state.analysis) : null;
+    const version = createVersionSnapshot(project, `版本 ${project.versions.length + 1}`, false, conclusion);
+    this.replaceProject({ ...project, versions: [version, ...project.versions] }, conclusion ? `已保存${version.name}，检查结论已随版本固定` : `已保存${version.name}（保存时未运行检查）`, false);
   }
 
-  freezeCurrent(): void {
+  async freezeCurrent(): Promise<void> {
     const project = this.state.project;
     if (!project || project.frozenVersionId) return;
-    const version = createVersionSnapshot(project, `冻结版本 ${project.versions.length + 1}`, true);
-    this.replaceProject({ ...project, versions: [version, ...project.versions], frozenVersionId: version.id }, `已冻结${version.name}`, false, true);
+    // 冻结必须固定“当时”的结论：先确保拿到一次基于当前内容的最新检查结果。
+    const issues = ruleDomain.validateProject(project);
+    if (issues.length) {
+      this.publish({ ...this.state, phase: 'validating', checkStatus: 'error', validationIssues: issues, notice: '存在定义问题，规则无法检查，暂不能冻结' });
+      return;
+    }
+    let analysis = this.state.analysis;
+    if (!analysis) {
+      if (this.checkTimer) {
+        clearTimeout(this.checkTimer);
+        this.checkTimer = undefined;
+      }
+      this.checkOperation?.cancel();
+      const revision = ++this.checkRevision;
+      this.publish({ ...this.state, phase: 'checking', checkStatus: 'checking', notice: '冻结前正在重新运行检查…' });
+      const operation = this.checker.run(project);
+      this.checkOperation = operation;
+      try {
+        analysis = await operation.promise;
+      } catch (error) {
+        if (revision === this.checkRevision) {
+          this.checkOperation = undefined;
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            this.publish({ ...this.state, phase: 'editing', checkStatus: 'cancelled', notice: '冻结前检查未完成，已取消冻结' });
+          } else {
+            const message = error instanceof Error ? error.message : '规则检查失败';
+            this.publish({ ...this.state, phase: 'error', checkStatus: 'error', notice: `冻结前检查失败：${message}` });
+          }
+        }
+        return;
+      }
+      if (revision !== this.checkRevision) return;
+      this.checkOperation = undefined;
+    }
+    const current = this.state.project;
+    if (!current || current.frozenVersionId) return;
+    const conclusion = deriveCheckConclusion(analysis);
+    const version = createVersionSnapshot(current, `冻结版本 ${current.versions.length + 1}`, true, conclusion);
+    this.replaceProject(
+      { ...current, versions: [version, ...current.versions], frozenVersionId: version.id },
+      `已冻结${version.name}，检查结论已固定`,
+      false,
+      true,
+    );
+    // 冻结后不再允许编辑，实时分析保留冻结时同一份结果，并与版本自带结论保持一致。
+    this.publish({ ...this.state, phase: 'ready', checkStatus: 'success', analysis: cloneData(analysis) });
   }
 
   restoreVersion(versionId: string): void {

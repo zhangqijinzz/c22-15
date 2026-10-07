@@ -40,6 +40,22 @@ export interface BusinessRule {
 
 export type SampleInput = Record<string, ScalarValue | ''>;
 
+export type CheckVerdict = 'clean' | 'warning' | 'conflict';
+
+export interface VersionCheckConclusion {
+  checkedAt: number;
+  verdict: CheckVerdict;
+  checkedCases: number;
+  coveredCases: number;
+  coveragePercent: number;
+  overlapCount: number;
+  conflictCount: number;
+  unreachableCount: number;
+  shadowedCount: number;
+  uncoveredCount: number;
+  truncated: boolean;
+}
+
 export interface RuleVersion {
   id: string;
   name: string;
@@ -48,6 +64,7 @@ export interface RuleVersion {
   fields: RuleField[];
   rules: BusinessRule[];
   sampleInputs: SampleInput;
+  checkConclusion?: VersionCheckConclusion | null;
 }
 
 export interface RuleProject {

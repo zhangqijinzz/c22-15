@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleField, RuleProject, RuleVersion, WorkspaceDocument } from '../models/ruleModel';
+import type { BusinessRule, RuleField, RuleProject, RuleVersion, VersionCheckConclusion, WorkspaceDocument } from '../models/ruleModel';
 import { defaultSample } from '../domain/conditionEvaluator';
 import { ProjectStorageService } from '../services/projectStorageService';
 
@@ -33,7 +33,10 @@ function decodeProject(value: unknown): RuleProject | null {
   const rules = value.rules.filter(isBusinessRule);
   if (fields.length !== value.fields.length || rules.length !== value.rules.length) return null;
   const versionsValue = Array.isArray(value.versions) ? value.versions : [];
-  const versions = versionsValue.filter(isRuleVersion);
+  const versions = versionsValue.filter(isRuleVersion).map((version) => ({
+    ...version,
+    checkConclusion: decodeCheckConclusion(version.checkConclusion),
+  }));
   if (versions.length !== versionsValue.length) return null;
   const project: RuleProject = {
     id: value.id,
@@ -71,7 +74,28 @@ function isRuleVersion(value: unknown): value is RuleVersion {
     && value.fields.every(isRuleField)
     && Array.isArray(value.rules)
     && value.rules.every(isBusinessRule)
-    && isRecord(value.sampleInputs);
+    && isRecord(value.sampleInputs)
+    && (value.checkConclusion === undefined || value.checkConclusion === null || isCheckConclusion(value.checkConclusion));
+}
+
+function isCheckConclusion(value: unknown): value is VersionCheckConclusion {
+  return isRecord(value)
+    && typeof value.checkedAt === 'number'
+    && ['clean', 'warning', 'conflict'].includes(String(value.verdict))
+    && typeof value.checkedCases === 'number'
+    && typeof value.coveredCases === 'number'
+    && typeof value.coveragePercent === 'number'
+    && typeof value.overlapCount === 'number'
+    && typeof value.conflictCount === 'number'
+    && typeof value.unreachableCount === 'number'
+    && typeof value.shadowedCount === 'number'
+    && typeof value.uncoveredCount === 'number'
+    && typeof value.truncated === 'boolean';
+}
+
+function decodeCheckConclusion(value: unknown): VersionCheckConclusion | null | undefined {
+  if (value === undefined || value === null) return value === null ? null : undefined;
+  return isCheckConclusion(value) ? value : undefined;
 }
 
 function isConditionGroup(value: unknown): value is BusinessRule['conditions'] {

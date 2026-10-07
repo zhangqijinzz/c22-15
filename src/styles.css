@@ -322,6 +322,18 @@ button:disabled { cursor: not-allowed !important; opacity: .5; }
 .version-actions .text-button { color: #72917f; font-size: 8px; }
 .version-state { color: #a5b0aa; font-size: 7px; white-space: nowrap; }
 .version-state.frozen { color: #548466; }
+.analysis-scope-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 7px 11px; border: 1px dashed #d9e5dd; border-radius: 7px; background: #f7faf8; color: #8a9991; font-size: 8px; }
+.analysis-scope-tag { flex: 0 0 auto; padding: 3px 7px; border-radius: 4px; background: #e9f1ec; color: #547365; font-weight: 700; font-size: 7px; letter-spacing: .4px; }
+.frozen-live-banner { margin-bottom: 10px; padding: 8px 11px; border-radius: 7px; background: #eef5ef; color: #55775f; font-size: 8px; }
+.version-conclusion { display: flex; align-items: center; gap: 7px; margin-top: 5px; }
+.conclusion-tag { flex: 0 0 auto; padding: 2px 6px; border-radius: 4px; font-size: 7px; font-weight: 700; }
+.conclusion-text { overflow: hidden; color: #93a09a; font: 7px 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.version-conclusion-clean .conclusion-tag { background: #e6f2e8; color: #4e7c5d; }
+.version-conclusion-warning .conclusion-tag { background: #fff6e7; color: #a77f42; }
+.version-conclusion-conflict .conclusion-tag { background: #fff0ed; color: #ac6459; }
+.version-conclusion-warning .conclusion-text, .version-conclusion-conflict .conclusion-text { color: #a8998d; }
+.version-conclusion-none .conclusion-untagged { background: #eef1ef; color: #98a49d; }
+.version-conclusion-none .conclusion-text { color: #aab5af; }
 .version-empty { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 10px 12px; box-shadow: none; }
 .version-empty > span { color: #8aa192; font-size: 15px; }
 .version-empty p { margin: 0; color: #9da9a3; font-size: 8px; }

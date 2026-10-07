@@ -6,6 +6,7 @@ import type {
   RuleOverlap,
   RuleProject,
   SampleInput,
+  VersionCheckConclusion,
 } from '../models/ruleModel';
 import { matchesRule } from './conditionEvaluator';
 
@@ -119,6 +120,28 @@ function collectBreaks(
 }
 
 export const ruleAnalysisService = { analyze: analyzeRules };
+
+export function deriveCheckConclusion(analysis: RuleAnalysis, checkedAt = Date.now()): VersionCheckConclusion {
+  const conflictCount = analysis.overlaps.filter((overlap) => overlap.conflict).length;
+  const hasWarning = analysis.unreachableRuleIds.length > 0
+    || analysis.shadowedRuleIds.length > 0
+    || analysis.uncoveredExamples.length > 0
+    || analysis.overlaps.length > 0
+    || analysis.truncated;
+  return {
+    checkedAt,
+    verdict: conflictCount > 0 ? 'conflict' : hasWarning ? 'warning' : 'clean',
+    checkedCases: analysis.checkedCases,
+    coveredCases: analysis.coveredCases,
+    coveragePercent: analysis.coveragePercent,
+    overlapCount: analysis.overlaps.length,
+    conflictCount,
+    unreachableCount: analysis.unreachableRuleIds.length,
+    shadowedCount: analysis.shadowedRuleIds.length,
+    uncoveredCount: analysis.uncoveredExamples.length,
+    truncated: analysis.truncated,
+  };
+}
 
 export function firstOverlapWitness(analysis: RuleAnalysis): MatchWitness | undefined {
   const overlap = analysis.overlaps[0];

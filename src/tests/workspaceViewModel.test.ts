@@ -85,13 +85,20 @@ describe('RuleWorkspaceViewModel', () => {
   it('saves versions, freezes and resumes a version, and copies it into a new project', async () => {
     const workspace = new RuleWorkspaceViewModel(new MemoryRepository(), new FakeChecker());
     await workspace.start();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(workspace.getSnapshot().checkStatus).toBe('success');
+
     workspace.saveVersion();
     const savedVersion = workspace.getSnapshot().project?.versions[0];
     expect(savedVersion?.frozen).toBe(false);
+    expect(savedVersion?.checkConclusion?.verdict).toBe('conflict');
+    expect(savedVersion?.checkConclusion?.conflictCount).toBeGreaterThan(0);
 
-    workspace.freezeCurrent();
+    await workspace.freezeCurrent();
     const frozen = workspace.getSnapshot().project;
     expect(frozen?.frozenVersionId).toBe(frozen?.versions[0].id);
+    expect(frozen?.versions[0].frozen).toBe(true);
+    expect(frozen?.versions[0].checkConclusion?.verdict).toBe('conflict');
     expect(workspace.commitProject({ ...(frozen as RuleProject), title: '不允许修改' })).toBe(false);
 
     workspace.restoreVersion(savedVersion?.id ?? '');
@@ -99,6 +106,52 @@ describe('RuleWorkspaceViewModel', () => {
     workspace.copyVersionToProject(savedVersion?.id ?? '');
     expect(workspace.getSnapshot().workspace?.projects).toHaveLength(2);
     expect(workspace.getSnapshot().project?.fields).toHaveLength(3);
+    workspace.dispose();
+  });
+
+  it('pins the check conclusion at freeze time and keeps it independent of later recomputation', async () => {
+    const checker = new FakeChecker();
+    const workspace = new RuleWorkspaceViewModel(new MemoryRepository(), checker);
+    await workspace.start();
+    await vi.advanceTimersByTimeAsync(50);
+
+    await workspace.freezeCurrent();
+    const pinned = workspace.getSnapshot().project?.versions[0].checkConclusion;
+    expect(pinned).toBeDefined();
+    expect(pinned?.coveragePercent).toBeGreaterThanOrEqual(0);
+
+    // 从冻结版本继续编辑：快照里的结论保持不变，编辑态结论被清空重算，两处不混用。
+    const frozenId = workspace.getSnapshot().project?.frozenVersionId as string;
+    workspace.restoreVersion(workspace.getSnapshot().project?.versions.find((version) => version.id === frozenId)?.id ?? '');
+    const restored = workspace.getSnapshot().project as RuleProject;
+    expect(restored.frozenVersionId).toBeUndefined();
+    expect(restored.versions[0].checkConclusion).toEqual(pinned);
+    expect(workspace.getSnapshot().analysis).toBeNull();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(workspace.getSnapshot().analysis).not.toBeNull();
+    expect(restored.versions[0].checkConclusion).toEqual(pinned);
+    workspace.dispose();
+  });
+
+  it('marks a version saved before any check as unchecked', async () => {
+    const workspace = new RuleWorkspaceViewModel(new MemoryRepository(), new FakeChecker());
+    await workspace.start();
+    workspace.saveVersion();
+    expect(workspace.getSnapshot().project?.versions[0].checkConclusion).toBeNull();
+    await vi.advanceTimersByTimeAsync(50);
+    workspace.saveVersion();
+    expect(workspace.getSnapshot().project?.versions[0].checkConclusion).not.toBeNull();
+    workspace.dispose();
+  });
+
+  it('refuses to freeze an invalid project without producing a version', async () => {
+    const workspace = new RuleWorkspaceViewModel(new MemoryRepository(), new FakeChecker());
+    await workspace.start();
+    const project = workspace.getSnapshot().project as RuleProject;
+    workspace.commitProject({ ...project, fields: project.fields.map((field) => field.id === 'cart-total' ? { ...field, min: 10, max: 0 } : field) });
+    await workspace.freezeCurrent();
+    expect(workspace.getSnapshot().project?.versions).toHaveLength(0);
+    expect(workspace.getSnapshot().notice).toContain('无法检查');
     workspace.dispose();
   });
 });

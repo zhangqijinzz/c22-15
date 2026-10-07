@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateSample } from '../domain/conditionEvaluator';
 import { validateField, validateProject } from '../domain/fieldValidation';
-import { analyzeRules } from '../domain/ruleAnalysis';
+import { analyzeRules, deriveCheckConclusion } from '../domain/ruleAnalysis';
 import type { BusinessRule, RuleField, RuleProject } from '../models/ruleModel';
 
 const amount: RuleField = { id: 'amount', name: '金额', type: 'number', min: 0, max: 1000 };
@@ -52,6 +52,27 @@ describe('rule consistency analysis', () => {
     expect(analysis.shadowedRuleIds).toContain('hidden');
     expect(analysis.uncoveredExamples.length).toBeGreaterThan(0);
     expect(analysis.checkedCases).toBeGreaterThan(0);
+
+    const conclusion = deriveCheckConclusion(analysis, 123);
+    expect(conclusion.checkedAt).toBe(123);
+    expect(conclusion.verdict).toBe('conflict');
+    expect(conclusion.conflictCount).toBeGreaterThan(0);
+    expect(conclusion.unreachableCount).toBe(analysis.unreachableRuleIds.length);
+    expect(conclusion.shadowedCount).toBe(analysis.shadowedRuleIds.length);
+  });
+
+  it('derives clean, warning and conflict verdicts from the analysis', () => {
+    const fullyCovered = project([
+      makeRule('any-a', { kind: 'group', operator: 'and', conditions: [{ kind: 'predicate', fieldId: 'tier', operator: 'eq', value: 'gold' }] }, 10, 'r'),
+      makeRule('any-b', { kind: 'group', operator: 'and', conditions: [{ kind: 'predicate', fieldId: 'tier', operator: 'eq', value: 'basic' }] }, 10, 'r'),
+    ]);
+    expect(deriveCheckConclusion(analyzeRules(fullyCovered)).verdict).toBe('clean');
+    expect(deriveCheckConclusion(analyzeRules(project([makeRule('unreachable', amountAtLeast(1001))]))).verdict).toBe('warning');
+    const conflicting = project([
+      makeRule('a', amountAtLeast(500), 10, 'one'),
+      makeRule('b', amountAtLeast(600), 10, 'two'),
+    ]);
+    expect(deriveCheckConclusion(analyzeRules(conflicting)).verdict).toBe('conflict');
   });
 
   it('evaluates OR groups and validates missing sample inputs precisely', () => {

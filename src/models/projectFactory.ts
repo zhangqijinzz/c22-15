@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleProject, RuleVersion, WorkspaceDocument } from './ruleModel';
+import type { BusinessRule, RuleProject, RuleVersion, VersionCheckConclusion, WorkspaceDocument } from './ruleModel';
 
 export function createDemoWorkspace(): WorkspaceDocument {
   const fields: RuleProject['fields'] = [
@@ -36,10 +36,16 @@ export function createBlankProject(ordinal: number): RuleProject {
   return { id: makeId('project'), title: `未命名规则项目 ${ordinal}`, fields: [], rules: [], sampleInputs: {}, versions: [], updatedAt: Date.now() };
 }
 
-export function createVersionSnapshot(project: RuleProject, name: string, frozen: boolean): RuleVersion {
+export function createVersionSnapshot(
+  project: RuleProject,
+  name: string,
+  frozen: boolean,
+  checkConclusion: VersionCheckConclusion | null = null,
+): RuleVersion {
   return {
     id: makeId('version'), name, savedAt: Date.now(), frozen,
     fields: cloneData(project.fields), rules: cloneData(project.rules), sampleInputs: cloneData(project.sampleInputs),
+    checkConclusion,
   };
 }
 
